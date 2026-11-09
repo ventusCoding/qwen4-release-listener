@@ -35,6 +35,7 @@ It watches the [Qwen page on Hugging Face](https://huggingface.co/Qwen). As soon
 - 📱 **Instant phone alerts** through the free [ntfy](https://ntfy.sh) app
 - 🔒 **Your own private topic**, created for you on first run
 - ⏱️ **You choose the timer**, every 60 seconds by default
+- 🎆 **A fireworks show in your terminal** the moment it drops
 - 🎮 **Simple menus** you control with the arrow keys
 - 🧰 **Guided setup**: it tells you exactly what to do, then sends a test message
 
@@ -106,6 +107,16 @@ Press **Enter** at any question to accept the default.
 | `python qwen4_listener.py --once` | Do one check, then exit |
 | `python qwen4_listener.py --test` | Check everything works and send one test message |
 | `python qwen4_listener.py --reset` | Start over like the first time |
+| `python qwen4_listener.py --celebrate` | Watch the release fireworks right now 🎆 |
+
+### 🎆 Preview the fireworks
+
+Want to see what happens the moment Qwen4 drops?
+
+| System | What to do |
+|---|---|
+| **Windows** | Double-click `Preview Release Animation.bat` |
+| **macOS / Linux** | Run `bash preview-release-animation.sh` in a terminal |
 | `python qwen4_listener.py --dev` | Preview the first run with a fake release. Saves nothing and sends nothing |
 
 > On macOS and Linux, use `python3`.
@@ -118,6 +129,12 @@ Press **Enter** at any question to accept the default.
 <summary><b>Does my computer need to stay on?</b></summary>
 <br>
 Yes. It only checks while the window is open and your computer is awake.
+</details>
+
+<details>
+<summary><b>What if I open it after Qwen4 is already out?</b></summary>
+<br>
+It plays the fireworks, shows the models it found, and stops. There is nothing left to listen for.
 </details>
 
 <details>

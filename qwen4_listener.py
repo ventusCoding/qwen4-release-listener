@@ -2,7 +2,7 @@
 Run: double-click "Start Qwen4 Listener.bat" (or: python qwen4_listener.py). Close the window to stop. Standard library only.
   python qwen4_listener.py --once   one check, then exit (sends nothing unless something new is found)
   python qwen4_listener.py --test   checks the name matching and sends one test message"""
-import hashlib, io, json, os, platform, re, secrets, shutil, sys, tarfile, time, urllib.request, zipfile
+import hashlib, io, json, math, os, platform, random, re, secrets, shutil, sys, tarfile, time, urllib.request, zipfile
 
 NTFY = "https://ntfy.sh"
 DEFAULT_TOPIC = "qwen4"
@@ -33,6 +33,143 @@ STOPS = [(59, 130, 246), (124, 92, 242), (168, 85, 247), (236, 72, 153)]    # bl
 RESET, DIM, BOLD = "\x1b[0m", "\x1b[2m", "\x1b[1m"
 GREEN, RED, BLUE, VIOLET = "\x1b[38;2;74;222;128m", "\x1b[38;2;248;113;113m", "\x1b[38;2;96;165;250m", "\x1b[38;2;192;132;252m"
 WIDTH = 64
+
+
+GLYPHS.update({
+    "R": ["██████╗ ", "██╔══██╗", "██████╔╝", "██╔══██╗", "██║  ██║", "╚═╝  ╚═╝"],
+    "L": ["██╗     ", "██║     ", "██║     ", "██║     ", "███████╗", "╚══════╝"],
+    "A": [" █████╗ ", "██╔══██╗", "███████║", "██╔══██║", "██║  ██║", "╚═╝  ╚═╝"],
+    "S": ["███████╗", "██╔════╝", "███████╗", "╚════██║", "███████║", "╚══════╝"],
+    "D": ["██████╗ ", "██╔══██╗", "██║  ██║", "██║  ██║", "██████╔╝", "╚═════╝ "],
+})
+FIREWORK_COLORS = [(59, 130, 246), (168, 85, 247), (236, 72, 153), (250, 204, 21), (74, 222, 128), (255, 255, 255)]
+
+
+def gradient_rgb(x):
+    """(r, g, b) at position x, wrapping around the blue to pink gradient."""
+    x = (x % 1.0) * 2
+    x = x if x <= 1 else 2 - x          # back and forth, so the wave has no hard seam
+    x = min(x, 0.999) * (len(STOPS) - 1)
+    i = int(x); f = x - i
+    a, b = STOPS[i], STOPS[i + 1]
+    return tuple(int(a[k] + (b[k] - a[k]) * f) for k in range(3))
+
+
+def big_text(word):
+    return [" ".join(GLYPHS[c][row] for c in word) for row in range(6)]
+
+
+def celebrate(names=()):
+    """The release show: rocket, flash, fireworks, giant animated title. About 10 seconds, then back to the normal screen."""
+    if not sys.stdout.isatty():
+        return
+    cols, rows = shutil.get_terminal_size((100, 30))
+    rows -= 1
+    title = big_text("QWEN4")
+    if rows >= 20 and cols >= 76:
+        title = title + [""] + big_text("RELEASED")
+        small = ""
+    else:
+        small = "R E L E A S E D"
+    lines = [("title", t) for t in title]
+    if small:
+        lines += [("", ""), ("msg", small)]
+    lines += [("", ""), ("msg", "CONGRATULATIONS!  IT IS FINALLY HERE!")]
+    if names:
+        lines += [("", ""), ("name", str(sorted(names)[0])[:cols - 4])]
+    top = max((rows - len(lines)) // 2, 0)
+    width = max(len(t) for _, t in lines)
+    left = max((cols - width) // 2, 0)
+    mask = (left - 2, top - 1, left + width + 2, top + len(lines) + 1)
+    sparks = []
+
+    def burst(x, y, n, color=None):
+        color = color or random.choice(FIREWORK_COLORS)
+        speed_top = random.uniform(13, 24)
+        for _ in range(n):
+            a = random.uniform(0, 2 * math.pi); v = random.uniform(0.25, 1.0) * speed_top
+            life = random.uniform(0.7, 1.6)
+            sparks.append([x, y, math.cos(a) * v * 2.0, math.sin(a) * v, life, life, color])
+
+    fps, total, launch = 30, 10.0, 0.9
+    out = sys.stdout
+    out.write("\x1b[?1049h\x1b[?25l\x1b[2J")
+    try:
+        boomed, next_burst, t0, frame = False, launch + 0.5, time.time(), 0
+        cx, peak = cols / 2, max(rows * 0.38, 3)
+        while True:
+            t = time.time() - t0
+            if t >= total:
+                break
+            grid = [[None] * cols for _ in range(rows)]
+            flash = 0
+            if t < launch:
+                y = rows - 1 - (rows - 1 - peak) * (t / launch) ** 0.7
+                sparks.append([cx + random.uniform(-0.6, 0.6), y + 1, random.uniform(-3, 3), random.uniform(4, 10), 0.35, 0.35, (250, 204, 21)])
+                if 0 <= int(y) < rows:
+                    grid[int(y)][int(cx)] = ("^", (255, 255, 255))
+            elif not boomed:
+                boomed = True
+                out.write("\a")
+                burst(cx, peak, 320, (255, 255, 255))
+                burst(cx, peak, 160, (168, 85, 247))
+            if boomed and t - launch < 0.14:
+                flash = int(235 * (1 - (t - launch) / 0.14))
+            if boomed and t < total - 1.6 and t >= next_burst:
+                next_burst = t + random.uniform(0.18, 0.42)
+                burst(random.uniform(cols * 0.08, cols * 0.92), random.uniform(rows * 0.08, rows * 0.72), random.randint(70, 130))
+            dt = 1.0 / fps
+            for s in sparks:
+                s[0] += s[2] * dt; s[1] += s[3] * dt; s[3] += 13 * dt; s[2] *= 0.982; s[4] -= dt
+            sparks[:] = [s for s in sparks if s[4] > 0]
+            for s in sparks:
+                x, y = int(s[0]), int(s[1])
+                if not (0 <= x < cols and 0 <= y < rows):
+                    continue
+                if t > launch + 0.5 and mask[0] <= x < mask[2] and mask[1] <= y < mask[3]:
+                    continue
+                k = s[4] / s[5]
+                grid[y][x] = ("*" if k > 0.66 else "+" if k > 0.33 else ".", tuple(int(c * (0.3 + 0.7 * k)) for c in s[6]))
+            reveal = (t - launch - 0.5) / 0.7
+            if reveal > 0:
+                for i, (kind, text) in enumerate(lines):
+                    y = top + i
+                    if not text or not (0 <= y < rows):
+                        continue
+                    if kind != "title":
+                        x0 = left + (width - len(text)) // 2
+                    else:
+                        x0 = left + (width - len(title[0])) // 2 if len(text) <= len(title[0]) else left
+                    show = int(len(text) * min(reveal, 1.0))
+                    for j, ch in enumerate(text[:show]):
+                        if ch != " " and 0 <= x0 + j < cols:
+                            if kind == "name":
+                                color = (96, 165, 250)
+                            elif kind == "msg":
+                                color = (255, 255, 255) if int(t * 4) % 2 else (250, 204, 21)
+                            else:
+                                color = gradient_rgb(j / 46.0 + i / 28.0 - t * 0.55)
+                            grid[y][x0 + j] = (ch, color)
+            buf = ["\x1b[H"]
+            bg = f"\x1b[48;2;{flash};{flash};{flash}m" if flash else ""
+            for r, row in enumerate(grid):
+                cur, parts = None, [bg]
+                for cell in row:
+                    if cell is None:
+                        parts.append(" ")
+                    else:
+                        if cell[1] != cur:
+                            cur = cell[1]; parts.append("\x1b[1;38;2;%d;%d;%dm" % cur)
+                        parts.append(cell[0])
+                parts.append("\x1b[0m")
+                if r < rows - 1:
+                    parts.append("\r\n")
+                buf.append("".join(parts))
+            out.write("".join(buf)); out.flush()
+            frame += 1
+            time.sleep(max(0.0, t0 + frame / fps - time.time()))
+    finally:
+        out.write("\x1b[0m\x1b[?25h\x1b[?1049l"); out.flush()
 
 
 def rgb(x):
@@ -296,7 +433,12 @@ def check():
         if not already_announced():
             notify(RELEASE_TITLE, "Found on Hugging Face:\n" + "\n".join(names[:10]))
         json.dump(sorted(seen() | new), open(SEEN_FILE, "w", encoding="utf-8"), indent=1)
-        clear_line(); print()
+        clear_line()
+        try:                            # the phone was already told: a display problem must never stop the listener
+            celebrate(new)
+        except Exception:
+            sys.stdout.write("\x1b[0m\x1b[?25h\x1b[?1049l")
+        print()
         box([("QWEN4 IS RELEASED!  Your phone was notified.", f"{GREEN}{BOLD}QWEN4 IS RELEASED!{RESET}  Your phone was notified.")] +
             [(n[:WIDTH - 4], f"{BLUE}{n[:WIDTH - 4]}{RESET}") for n in names[:10]], GREEN)
         print(flush=True)
@@ -463,8 +605,45 @@ def dev_mode():
     find_qwen4, notify = fake_find, fake_notify
 
 
+def released_at_start():
+    """Opened after the release: play the show and stop, there is nothing left to listen for.
+    Needs a real model on Hugging Face; a mention on the collections page alone is not enough to stop listening."""
+    global TOPIC
+    try:
+        found = find_qwen4()
+    except Exception:
+        return False
+    models = sorted(n for n in found if not n.startswith("collection:"))
+    if not models:
+        return False
+    mine, confirmed = private_topic()
+    new = set(models) - seen()
+    if new and confirmed:               # first time this PC sees it, and the phone is set up
+        TOPIC = mine
+        try:
+            if not already_announced():
+                notify(RELEASE_TITLE, "Found on Hugging Face:\n" + "\n".join(sorted(new)[:10]))
+        except Exception:
+            pass
+    json.dump(sorted(seen() | set(models)), open(SEEN_FILE, "w", encoding="utf-8"), indent=1)
+    try:
+        celebrate(models)
+    except Exception:
+        sys.stdout.write("\x1b[0m\x1b[?25h\x1b[?1049l")
+    print()
+    box([("QWEN4 IS RELEASED!", f"{GREEN}{BOLD}QWEN4 IS RELEASED!{RESET}")] +
+        [(n[:WIDTH - 4], f"{BLUE}{n[:WIDTH - 4]}{RESET}") for n in models[:10]] +
+        [("", ""), ("You don't need the listener anymore. Enjoy!", f"{DIM}You don't need the listener anymore. Enjoy!{RESET}")], GREEN)
+    print(flush=True)
+    return True
+
+
 def main():
     global TOPIC
+    if "--celebrate" in sys.argv:       # just watch the release animation
+        setup_console()
+        celebrate({"Qwen/Qwen4-27B"})
+        return
     if "--dev" in sys.argv:
         dev_mode()
     if "--reset" in sys.argv:
@@ -485,6 +664,8 @@ def main():
         print("new:", sorted(check()))
         return
     setup_console()
+    if not DEV and released_at_start():
+        return
     banner()
     if DEV:
         print(f"  {BOLD}{gradient('DEV PREVIEW')}{RESET}  {DIM}first use, nothing saved, no phone messages. A fake release appears on the second check.{RESET}\n")
